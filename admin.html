@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin — Sunami Water Park</title>
+<style>
+  :root{ --ocean:#052033; --lagoon:#0ea5a8; --coral:#ff7a59; --foam:#f4fbfb; --muted:#5c7a89; }
+  *{box-sizing:border-box; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;}
+  body{margin:0; background:var(--foam); color:#06202f;}
+  header{background:var(--ocean); color:#fff; padding:22px 28px;}
+  header h1{margin:0; font-size:1.3rem;}
+  .wrap{max-width:1100px; margin:0 auto; padding:28px;}
+  .tabs{display:flex; gap:10px; margin-bottom:22px;}
+  .tab-btn{padding:10px 20px; border-radius:100px; border:2px solid var(--lagoon); background:#fff; color:var(--lagoon); font-weight:700; cursor:pointer;}
+  .tab-btn.active{background:var(--lagoon); color:#fff;}
+  table{width:100%; border-collapse:collapse; background:#fff; border-radius:14px; overflow:hidden; box-shadow:0 10px 30px -18px rgba(5,32,51,0.3);}
+  th,td{padding:12px 14px; text-align:left; font-size:0.85rem; border-bottom:1px solid #eef3f3;}
+  th{background:#eef8f8; color:var(--ocean); text-transform:uppercase; font-size:0.72rem; letter-spacing:0.03em;}
+  tr:last-child td{border-bottom:none;}
+  .badge{padding:4px 10px; border-radius:100px; font-size:0.72rem; font-weight:700;}
+  .badge.pending{background:#fff3e0; color:#c97a00;}
+  .badge.approved{background:#e3f7f0; color:#0b8a5f;}
+  select{padding:6px 10px; border-radius:8px; border:1px solid #ccc;}
+  button.act{padding:6px 12px; border-radius:8px; border:none; font-size:0.78rem; font-weight:700; cursor:pointer; margin-right:6px;}
+  .btn-approve{background:var(--lagoon); color:#fff;}
+  .btn-delete{background:var(--coral); color:#fff;}
+  .empty{padding:30px; text-align:center; color:var(--muted);}
+  .section{display:none;}
+  .section.active{display:block;}
+  .stat-row{display:flex; gap:16px; margin-bottom:24px;}
+  .stat{background:#fff; border-radius:14px; padding:16px 20px; box-shadow:0 10px 30px -18px rgba(5,32,51,0.3); flex:1;}
+  .stat b{display:block; font-size:1.6rem; color:var(--ocean);}
+  .stat span{font-size:0.78rem; color:var(--muted);}
+</style>
+</head>
+<body>
+<header><h1>🌊 Sunami Water Park — Admin Dashboard</h1></header>
+<div class="wrap">
+  <div class="stat-row" id="statRow"></div>
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="bookings">Bookings</button>
+    <button class="tab-btn" data-tab="reviews">Reviews</button>
+  </div>
+
+  <div class="section active" id="bookings-section">
+    <table>
+      <thead><tr><th>ID</th><th>Name</th><th>Phone</th><th>Type</th><th>Adults/Kids/Group</th><th>Food</th><th>Total</th><th>Date</th><th>Status</th></tr></thead>
+      <tbody id="bookingsBody"></tbody>
+    </table>
+  </div>
+
+  <div class="section" id="reviews-section">
+    <table>
+      <thead><tr><th>ID</th><th>Name</th><th>Rating</th><th>Review</th><th>Status</th><th>Actions</th></tr></thead>
+      <tbody id="reviewsBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById(btn.dataset.tab + '-section').classList.add('active');
+  });
+});
+
+function loadBookings(){
+  fetch('/api/admin/bookings').then(r => r.json()).then(rows => {
+    document.getElementById('statRow').innerHTML = `
+      <div class="stat"><b>${rows.length}</b><span>Total Bookings</span></div>
+      <div class="stat"><b>₹${rows.reduce((s,r)=>s+r.total_amount,0).toLocaleString('en-IN')}</b><span>Total Revenue (all bookings)</span></div>
+      <div class="stat"><b>${rows.filter(r=>r.status==='pending').length}</b><span>Pending Confirmation</span></div>
+    `;
+    const body = document.getElementById('bookingsBody');
+    if (!rows.length){ body.innerHTML = '<tr><td colspan="9" class="empty">No bookings yet.</td></tr>'; return; }
+    body.innerHTML = rows.map(r => `
+      <tr>
+        <td>#${r.id}</td>
+        <td>${r.visitor_name}<br><small>${r.visitor_email||''}</small></td>
+        <td>${r.visitor_phone}</td>
+        <td>${r.ticket_type}</td>
+        <td>${r.adults}A / ${r.kids}K / ${r.group_size}G</td>
+        <td>${JSON.parse(r.food_items||'[]').join(', ') || '—'}</td>
+        <td><b>₹${r.total_amount}</b></td>
+        <td>${r.visit_date}</td>
+        <td>
+          <select onchange="updateStatus(${r.id}, this.value)">
+            <option value="pending" ${r.status==='pending'?'selected':''}>Pending</option>
+            <option value="confirmed" ${r.status==='confirmed'?'selected':''}>Confirmed</option>
+            <option value="cancelled" ${r.status==='cancelled'?'selected':''}>Cancelled</option>
+          </select>
+        </td>
+      </tr>`).join('');
+  });
+}
+
+function updateStatus(id, status){
+  fetch('/api/admin/bookings/' + id + '/status', {
+    method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({status})
+  }).then(loadBookings);
+}
+
+function loadReviews(){
+  fetch('/api/admin/reviews').then(r => r.json()).then(rows => {
+    const body = document.getElementById('reviewsBody');
+    if (!rows.length){ body.innerHTML = '<tr><td colspan="6" class="empty">No reviews yet.</td></tr>'; return; }
+    body.innerHTML = rows.map(r => `
+      <tr>
+        <td>#${r.id}</td>
+        <td>${r.reviewer_name}<br><small>${r.reviewer_visit||''}</small></td>
+        <td>${'★'.repeat(r.rating)}</td>
+        <td style="max-width:280px;">${r.review_text}</td>
+        <td><span class="badge ${r.approved ? 'approved':'pending'}">${r.approved ? 'Live on site' : 'Pending'}</span></td>
+        <td>
+          ${!r.approved ? `<button class="act btn-approve" onclick="approveReview(${r.id})">Approve</button>` : ''}
+          <button class="act btn-delete" onclick="deleteReview(${r.id})">Delete</button>
+        </td>
+      </tr>`).join('');
+  });
+}
+
+function approveReview(id){
+  fetch('/api/admin/reviews/' + id + '/approve', { method: 'POST' }).then(loadReviews);
+}
+function deleteReview(id){
+  if (!confirm('Delete this review?')) return;
+  fetch('/api/admin/reviews/' + id, { method: 'DELETE' }).then(loadReviews);
+}
+
+loadBookings();
+loadReviews();
+</script>
+</body>
+</html>
